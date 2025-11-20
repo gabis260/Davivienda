@@ -752,17 +752,36 @@ function renderTable(filtered) {
 }
 
 // ========== MONITOREO ==========
-function enviarAlerta(nombreProceso) {
+async function enviarAlerta(nombreProceso) {
     const correosProceso = getCorreosForProceso(nombreProceso);
     const destinatarios = [DEFAULT_ALERT_EMAIL].concat(correosProceso);
-    const to = encodeURIComponent(destinatarios.join(','));
-    const subject = encodeURIComponent('Alerta proceso ' + nombreProceso);
-    const body = encodeURIComponent(
-        'Se genera alerta del proceso: ' + nombreProceso + '%0D%0A%0D%0A' +
-        'Por favor revisar el estado en el tablero de control.'
+    
+    // Mostrar modal de confirmación con los destinatarios
+    const confirmar = confirm(
+        `¿Enviar alerta del proceso "${nombreProceso}"?\n\n` +
+        `Destinatarios:\n${destinatarios.join('\n')}\n\n` +
+        `Se abrirá Gmail para enviar el correo.`
     );
-    window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+    
+    if (!confirmar) return;
+    
+    // Crear el cuerpo del mensaje
+    const subject = 'Alerta proceso ' + nombreProceso;
+    const body = 
+        'Se genera alerta del proceso: ' + nombreProceso + '\n\n' +
+        'Por favor revisar el estado en el tablero de control.\n\n' +
+        'Enviado desde Tablero Davivienda Control\n' +
+        'Fecha: ' + new Date().toLocaleString('es-CO');
+    
+    // Abrir Gmail con el mensaje pre-cargado
+    const gmailUrl = 'https://mail.google.com/mail/?view=cm&fs=1' +
+        '&to=' + encodeURIComponent(destinatarios.join(',')) +
+        '&su=' + encodeURIComponent(subject) +
+        '&body=' + encodeURIComponent(body);
+    
+    window.open(gmailUrl, '_blank');
 }
+
 
 function renderMonitored() {
     if (fechasData.length === 0) {
