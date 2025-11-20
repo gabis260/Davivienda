@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tablero Davivienda - Control de Procesos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body class="bg-gradient-to-br from-white to-red-50">
+
+<!-- Header Sticky -->
+<div class="sticky top-0 z-50 bg-white border-b-2 border-red-500 shadow-lg">
+    <div class="max-w-7xl mx-auto px-4 py-4">
+        <div class="flex justify-between items-center flex-wrap gap-3">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
+                    🏦 Davivienda Control
+                    <span id="alertBadge" class="hidden animate-pulse bg-red-600 text-white text-xs px-2 py-1 rounded-full"></span>
+                    <span id="connectionStatus" class="text-xs px-2 py-1 rounded-full bg-gray-200 text-gray-600">🔄 Conectando...</span>
+                </h1>
+                <p class="text-gray-600 text-xs" id="headerInfo">Esperando datos...</p>
+                <p class="text-gray-500 text-[11px]" id="deadlineInfo">Deadline 3:00 p.m.</p>
+            </div>
+            
+            <div class="flex gap-2 flex-wrap items-center">
+                <div class="flex gap-1 bg-white border border-gray-300 rounded-lg p-1">
+                    <button onclick="setFilter('todos')" id="btnTodos" class="px-2 py-1 rounded text-xs font-semibold bg-red-600 text-white">Todos</button>
+                    <button onclick="setFilter('produccion')" id="btnProduccion" class="px-2 py-1 rounded text-xs font-semibold text-gray-600">Producción</button>
+                    <button onclick="setFilter('pruebas')" id="btnPruebas" class="px-2 py-1 rounded text-xs font-semibold text-gray-600">Pruebas</button>
+                </div>
+
+                <button onclick="loadAllData()" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg font-semibold inline-flex items-center gap-1 text-xs">
+                    🔄 Recargar
+                </button>
+
+                <button onclick="toggleManualUpload()" class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded-lg font-semibold inline-flex items-center gap-1 text-xs">
+                    📂 Manual
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Panel de carga manual (oculto por defecto) -->
+<div id="manualUploadPanel" class="hidden max-w-7xl mx-auto px-4 py-4">
+    <div class="bg-yellow-50 border-2 border-yellow-500 rounded-xl p-4 shadow-lg">
+        <h3 class="text-sm font-bold text-gray-900 mb-3">📤 Carga Manual de Archivos CSV</h3>
+        <div class="flex gap-2 flex-wrap">
+            <label class="cursor-pointer bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg font-semibold inline-flex items-center gap-1 text-xs">
+                📂 Datos
+                <input type="file" accept=".csv,.txt,.tsv" class="hidden" onchange="handleFileUpload(event, 'datos')">
+            </label>
+            
+            <label class="cursor-pointer bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg font-semibold inline-flex items-center gap-1 text-xs">
+                📅 Fechas
+                <input type="file" accept=".csv,.txt,.tsv" class="hidden" onchange="handleFileUpload(event, 'fechas')">
+            </label>
+
+            <label class="cursor-pointer bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg font-semibold inline-flex items-center gap-1 text-xs">
+                👥 Correos
+                <input type="file" accept=".csv,.txt,.tsv" class="hidden" onchange="handleFileUpload(event, 'correos')">
+            </label>
+
+            <label class="cursor-pointer bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg font-semibold inline-flex items-center gap-1 text-xs">
+                🕒 Historial
+                <input type="file" accept=".csv,.txt,.tsv" class="hidden" onchange="handleFileUpload(event, 'historial')">
+            </label>
+        </div>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+    
+    <!-- KPIs Principales -->
+    <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="bg-white border border-gray-300 rounded-xl p-4 shadow-lg hover:shadow-xl transition-shadow">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-lg">📅</span>
+                <span class="text-2xl font-bold text-gray-900" id="todayProcesses">0</span>
+            </div>
+            <h3 class="text-gray-600 text-xs font-semibold">Procesos hoy</h3>
+        </div>
+
+        <div class="bg-white border border-gray-300 rounded-xl p-4 shadow-lg hover:shadow-xl transition-shadow">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-lg">📊</span>
+                <span class="text-2xl font-bold text-gray-900" id="totalProcesses">0</span>
+            </div>
+            <h3 class="text-gray-600 text-xs font-semibold">Registros cargados (filtro actual)</h3>
+        </div>
+    </div>
+
+    <!-- Historial Fuentes -->
+    <div id="historialSection" class="hidden bg-white border border-gray-300 rounded-xl p-4 shadow-lg"></div>
+
+    <!-- Buscador y Info Proceso -->
+    <div class="grid lg:grid-cols-2 gap-4">
+        <div class="bg-white border border-gray-300 rounded-xl p-4 shadow-lg">
+            <h3 class="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
+                🔍 Buscar Proceso
+            </h3>
+            <div class="flex gap-2 mb-3">
+                <input type="text" id="searchInput" placeholder="Buscar proceso, usuario o correo..." 
+                    class="flex-1 bg-white text-gray-900 px-3 py-2 rounded-lg border-2 border-gray-300 focus:border-red-500 outline-none text-sm" 
+                    oninput="handleSearch()">
+                <button onclick="clearSearch()" class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-sm">
+                    Limpiar
+                </button>
+            </div>
+            <div id="searchResults" class="max-h-40 overflow-y-auto"></div>
+        </div>
+
+        <div id="processInfo" class="hidden bg-white border-2 border-red-500 rounded-xl p-4 shadow-lg"></div>
+    </div>
+
+    <!-- Gráficos -->
+    <div class="grid lg:grid-cols-3 gap-4">
+        <div class="bg-white border border-gray-300 rounded-xl p-4 shadow-lg">
+            <h3 class="text-sm font-bold text-gray-900 mb-3">⚠️ % Error sobre Reglas</h3>
+            <div class="h-60">
+                <canvas id="chartErrors"></canvas>
+            </div>
+        </div>
+
+        <div class="bg-white border border-gray-300 rounded-xl p-4 shadow-lg">
+            <h3 class="text-sm font-bold text-gray-900 mb-3">📂 Procesos Más Frecuentes</h3>
+            <div class="h-60">
+                <canvas id="chartFrequent"></canvas>
+            </div>
+        </div>
+
+        <div class="bg-white border border-gray-300 rounded-xl p-4 shadow-lg">
+            <h3 class="text-sm font-bold text-gray-900 mb-3">👥 Top 10 Usuarios</h3>
+            <div class="h-60">
+                <canvas id="chartUsers"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Procesos Monitoreados -->
+    <div id="monitored" class="hidden bg-white border border-gray-300 rounded-xl p-4 shadow-lg"></div>
+
+    <!-- Tabla -->
+    <div class="bg-white border border-gray-300 rounded-xl p-4 shadow-lg">
+        <h3 class="text-lg font-bold text-gray-900 mb-3">📋 Últimos 15 Procesos Ejecutados</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-xs">
+                <thead>
+                    <tr class="border-b-2 border-gray-300">
+                        <th class="text-left text-gray-700 font-semibold p-2">Usuario</th>
+                        <th class="text-left text-gray-700 font-semibold p-2">Proceso</th>
+                        <th class="text-left text-gray-700 font-semibold p-2">Fecha</th>
+                        <th class="text-center text-gray-700 font-semibold p-2">Estado</th>
+                        <th class="text-center text-gray-700 font-semibold p-2">Tipo</th>
+                        <th class="text-right text-gray-700 font-semibold p-2">Tiempo (min)</th>
+                        <th class="text-right text-gray-700 font-semibold p-2">Errores</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+// ========== CONFIGURACIÓN ==========
+// ⚠️ IMPORTANTE: Reemplaza esta URL con la URL de tu Apps Script si luego conectas Sheets
+const APPS_SCRIPT_URL = 'https://script.google.com/a/macros/davivienda.com/s/AKfycbwYt8v-ianpqOpRmzsbtlclKc6yIjYHzJNnR5jWRMW2YqgkZb1VYgyac6cRlt903W_Y/exec';
+const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutos
+const DEFAULT_ALERT_EMAIL = 'gabriela.gonzalezcuervo@davivienda.com';
+
+// ========== VARIABLES GLOBALES ==========
+let data = [];
+let fechasData = [];
+let correosData = [];
+let historialData = [];
+let filterType = 'todos';
+let searchTerm = '';
+let selectedProcess = null;
+let charts = {};
+let autoRefreshTimer = null;
+let deadlineInterval = null;
+
+// ========== INICIO ==========
+loadAllData(); // Cargar datos al iniciar
+
+// ========== FUNCIONES DE CARGA ==========
+async function loadAllData() {
+    updateConnectionStatus('loading');
+    
+    try {
+        const [datosResult, fechasResult, correosResult, historialResult] = await Promise.all([
+            fetchSheetData('datos'),
+            fetchSheetData('fechas'),
+            fetchSheetData('correos'),
+            fetchSheetData('historial')
+        ]);
+        
+        data = datosResult;
+        fechasData = fechasResult;
+        correosData = correosResult;
+        historialData = historialResult;
+        
+        updateConnectionStatus('connected');
+        renderDashboard();
+        
+        if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+        autoRefreshTimer = setInterval(loadAllData, AUTO_REFRESH_INTERVAL);
+        
+    } catch (error) {
+        console.error('Error cargando datos:', error);
+        updateConnectionStatus('error');
+        // Si estás solo en modo manual, este error es normal cuando no hay Apps Script configurado.
+    }
+}
+
+async function fetchSheetData(tipo) {
+    if (!APPS_SCRIPT_URL) {
+        throw new Error('Debes configurar la URL del Apps Script');
+    }
+    
+    const url = APPS_SCRIPT_URL + '?tipo=' + tipo;
+    const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include'
+    });
+    
+    if (!response.ok) {
+        throw new Error('Error en la petición: ' + response.status);
+    }
+    
+    const result = await response.json();
+    
+    if (result.error) {
+        throw new Error(result.error);
+    }
+    
+    return result;
+}
+
+function updateConnectionStatus(status) {
+    const statusElement = document.getElementById('connectionStatus');
+    
+    if (status === 'loading') {
+        statusElement.className = 'text-xs px-2 py-1 rounded-full bg-yellow-200 text-yellow-800';
+        statusElement.textContent = '🔄 Cargando...';
+        statusElement.classList.remove('hidden');
+    } else if (status === 'connected') {
+        statusElement.className = 'text-xs px-2 py-1 rounded-full bg-green-200 text-green-800';
+        statusElement.textContent = '✅ Conectado';
+        setTimeout(() => {
+            statusElement.classList.add('hidden');
+        }, 3000);
+    } else if (status === 'error') {
+        statusElement.className = 'text-xs px-2 py-1 rounded-full bg-red-200 text-red-800';
+        statusElement.textContent = '❌ Error';
+        statusElement.classList.remove('hidden');
+    }
+}
+
+function toggleManualUpload() {
+    const panel = document.getElementById('manualUploadPanel');
+    panel.classList.toggle('hidden');
+}
+
+function handleFileUpload(event, type) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+            if (type === 'datos') {
+                data = results.data;
+            } else if (type === 'fechas') {
+                fechasData = results.data;
+            } else if (type === 'correos') {
+                correosData = results.data;
+            } else if (type === 'historial') {
+                historialData = results.data;
+            }
+            updateConnectionStatus('connected');
+            renderDashboard();
+        }
+    });
+}
+
+// ========== DEADLINE 3:00 PM ==========
+function updateDeadline() {
+    const elem = document.getElementById('deadlineInfo');
+    if (!elem) return;
+
+    const now = new Date();
+    const deadline = new Date();
+    deadline.setHours(15, 0, 0, 0); // 3:00 p.m.
+
+    if (now <= deadline) {
+        const diffMs = deadline - now;
+        const diffMin = Math.round(diffMs / 60000);
+        const hours = Math.floor(diffMin / 60);
+        const mins = diffMin % 60;
+
+        let texto = 'Deadline 3:00 p.m. en ';
+        if (hours > 0) {
+            texto += hours + 'h ' + mins + 'm';
+        } else {
+            texto += mins + ' minutos';
+        }
+
+        elem.textContent = texto;
+        elem.className = 'text-[11px] ' + (diffMin <= 60 ? 'text-red-600 font-semibold' : 'text-gray-500');
+    } else {
+        elem.textContent = 'Deadline 3:00 p.m. ✅ ya pasó hoy';
+        elem.className = 'text-[11px] text-gray-500';
+    }
+}
+
+// ========== FILTROS ==========
+function setFilter(type) {
+    filterType = type;
+    document.getElementById('btnTodos').className = 'px-2 py-1 rounded text-xs font-semibold ' + (type === 'todos' ? 'bg-red-600 text-white' : 'text-gray-600');
+    document.getElementById('btnProduccion').className = 'px-2 py-1 rounded text-xs font-semibold ' + (type === 'produccion' ? 'bg-red-600 text-white' : 'text-gray-600');
+    document.getElementById('btnPruebas').className = 'px-2 py-1 rounded text-xs font-semibold ' + (type === 'pruebas' ? 'bg-red-600 text-white' : 'text-gray-600');
+    renderDashboard();
+}
+
+function getFilteredData() {
+    return data.filter(function(d) {
+        const matchesType = filterType === 'todos' || d.tipo_ejecucion === filterType;
+        const matchesSearch = !searchTerm || 
+            (d.proceso && d.proceso.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (d.usuario && d.usuario.toLowerCase().includes(searchTerm.toLowerCase()));
+        return matchesType && matchesSearch;
+    });
+}
+
+// ========== CORREOS POR PROCESO ==========
+function getCorreosForProceso(procesoNombre) {
+    if (!correosData || correosData.length === 0 || !procesoNombre) return [];
+    const procLower = procesoNombre.toString().trim().toLowerCase();
+
+    const row = correosData.find(r => {
+        const p1 = (r.proceso || r.PROCESO || '').toString().trim().toLowerCase();
+        return p1 === procLower;
+    });
+
+    if (!row) return [];
+    const correos = [];
+    for (let i = 1; i <= 5; i++) {
+        const val = (row['correos' + i] || row['CORREOS' + i] || row['correo' + i] || row['CORREO' + i] || '').toString().trim();
+        if (val) correos.push(val);
+    }
+    return correos;
+}
+
+// ========== RENDER PRINCIPAL ==========
+function renderDashboard() {
+    if (data.length === 0) {
+        updateDeadline();
+        if (!deadlineInterval) {
+            deadlineInterval = setInterval(updateDeadline, 60000);
+        }
+        return;
+    }
+
+    const filtered = getFilteredData();
+    
+    const uniqueProc = new Set(filtered.map(function(d) { return d.proceso; }).filter(Boolean)).size;
+    document.getElementById('headerInfo').textContent = 
+        filtered.length + ' registros • ' + uniqueProc + ' procesos • Última actualización: ' + new Date().toLocaleTimeString();
+    
+    const today = new Date().toISOString().split('T')[0];
+    const todayProc = filtered.filter(function(d) { return d.fecha && d.fecha.indexOf(today) === 0; }).length;
+    
+    document.getElementById('todayProcesses').textContent = todayProc;
+    document.getElementById('totalProcesses').textContent = filtered.length;
+    
+    const alertas = fechasData.filter(function(f) { return f.ESTADO === 'ALERTA'; }).length;
+    const badge = document.getElementById('alertBadge');
+    if (alertas > 0) {
+        badge.textContent = alertas;
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+    
+    renderHistorial();
+    renderCharts(filtered);
+    renderTable(filtered);
+    renderMonitored();
+    updateDeadline();
+    if (!deadlineInterval) {
+        deadlineInterval = setInterval(updateDeadline, 60000);
+    }
+}
+
+// ========== HISTORIAL FUENTES ==========
+function renderHistorial() {
+    const section = document.getElementById('historialSection');
+    if (!section) return;
+
+    if (!historialData || historialData.length === 0) {
+        section.classList.add('hidden');
+        section.innerHTML = '';
+        return;
+    }
+
+    const fuentes = ['EXPERTO', 'W11', 'CDAV', 'FAH', 'MOVP', 'SIIL 01', 'COB_COSTAS', 'SIIL 60'];
+    const tiemposFuentes = {};
+    const tiemposTodasOkPorDia = {};
+    
+    fuentes.forEach(f => tiemposFuentes[f] = []);
+
+    function parseHoraToMinutos(horaStr) {
+        if (!horaStr) return null;
+        const partes = horaStr.split(':');
+        if (partes.length < 2) return null;
+        const h = parseInt(partes[0], 10) || 0;
+        const m = parseInt(partes[1], 10) || 0;
+        const s = parseInt(partes[2] || '0', 10) || 0;
+        return h * 60 + m + (s / 60);
+    }
+
+    function parseFechaHoraHistorial(row) {
+        const fechaRaw = (row['Fecha Reporte'] || row['FECHA REPORTE'] || '').trim();
+        const horaRaw = (row['Hora Envío'] || row['Hora Envio'] || row['HORA ENVÍO'] || '').trim();
+        if (!fechaRaw || !horaRaw) return null;
+
+        const partesFecha = fechaRaw.split('/');
+        if (partesFecha.length !== 3) return null;
+        const d = partesFecha[0].padStart(2, '0');
+        const m = partesFecha[1].padStart(2, '0');
+        const y = partesFecha[2];
+        const fechaISO = `${y}-${m}-${d}`;
+        const fechaKey = fechaISO;
+
+        const dt = new Date(`${fechaISO}T${horaRaw}`);
+        if (isNaN(dt.getTime())) return null;
+
+        return { dt, fechaKey };
+    }
+
+    historialData.forEach(row => {
+        const horaStr = (row['Hora Envío'] || row['Hora Envio'] || row['HORA ENVÍO'] || '').trim();
+        const minutos = parseHoraToMinutos(horaStr);
+        if (minutos === null) return;
+
+        let todasOk = true;
+        fuentes.forEach(f => {
+            const estado = (row[f] || '').toString().trim().toUpperCase();
+            if (estado === 'OK') {
+                tiemposFuentes[f].push(minutos);
+            } else {
+                todasOk = false;
+            }
+        });
+
+        const fechaHora = parseFechaHoraHistorial(row);
+        if (todasOk && fechaHora) {
+            const { dt, fechaKey } = fechaHora;
+            if (!tiemposTodasOkPorDia[fechaKey] || dt < tiemposTodasOkPorDia[fechaKey]) {
+                tiemposTodasOkPorDia[fechaKey] = dt;
+            }
+        }
+    });
+
+    function promedioMinutosToHHMM(lista) {
+        if (!lista || lista.length === 0) return '-';
+        const suma = lista.reduce((a, b) => a + b, 0);
+        const prom = suma / lista.length;
+        const h = Math.floor(prom / 60);
+        const m = Math.round(prom % 60);
+        return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    }
+
+    const fuentesCardsHtml = fuentes.map(f => {
+        const hhmm = promedioMinutosToHHMM(tiemposFuentes[f]);
+        return `
+            <div class="bg-red-50 border border-red-200 rounded-xl p-3 shadow-sm">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-semibold text-gray-700 truncate">${f}</span>
+                    <span class="text-xs">⏱️</span>
+                </div>
+                <p class="text-xl font-bold text-gray-900 font-mono">${hhmm}</p>
+                <p class="text-[11px] text-gray-500 mt-1">Hora promedio cuando está OK</p>
+            </div>
+        `;
+    }).join('');
+
+    const listaTodasOk = Object.values(tiemposTodasOkPorDia).map(dt => {
+        return dt.getHours() * 60 + dt.getMinutes();
+    });
+    const horaTodasOk = promedioMinutosToHHMM(listaTodasOk);
+
+    const tiemposDesdeFuentesPorProceso = {};
+    const conteoPorProceso = {};
+
+    if (data && data.length > 0 && Object.keys(tiemposTodasOkPorDia).length > 0) {
+        data.forEach(row => {
+            if (!row.fecha || !row.proceso) return;
+            const fechaStr = row.fecha.toString().substring(0, 10);
+            const dtProceso = new Date(row.fecha);
+            if (isNaN(dtProceso.getTime())) return;
+
+            const dtFuentes = tiemposTodasOkPorDia[fechaStr];
+            if (!dtFuentes) return;
+
+            const diffMin = (dtProceso - dtFuentes) / 60000;
+            if (diffMin < 0) return;
+
+            const proc = row.proceso;
+            if (!tiemposDesdeFuentesPorProceso[proc]) {
+                tiemposDesdeFuentesPorProceso[proc] = 0;
+                conteoPorProceso[proc] = 0;
+            }
+            tiemposDesdeFuentesPorProceso[proc] += diffMin;
+            conteoPorProceso[proc] += 1;
+        });
+    }
+
+    const promediosProceso = Object.keys(tiemposDesdeFuentesPorProceso).map(proc => {
+        const total = tiemposDesdeFuentesPorProceso[proc];
+        const count = conteoPorProceso[proc];
+        const prom = total / count;
+        return {
+            proceso: proc,
+            minutos: prom
+        };
+    });
+
+    promediosProceso.sort((a, b) => a.minutos - b.minutos);
+
+    const topProcesos = promediosProceso.slice(0, 6);
+    const procesosCardsHtml = topProcesos.map(p => {
+        const horas = (p.minutos / 60);
+        const labelTiempo = p.minutos < 90 
+            ? p.minutos.toFixed(0) + ' min'
+            : horas.toFixed(1) + ' h';
+
+        return `
+            <div class="bg-gray-50 border border-gray-200 rounded-xl p-3 shadow-sm">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-semibold text-gray-700 truncate" title="${p.proceso}">${p.proceso.substring(0, 22)}</span>
+                    <span class="text-xs">📈</span>
+                </div>
+                <p class="text-xl font-bold text-gray-900">${labelTiempo}</p>
+                <p class="text-[11px] text-gray-500 mt-1">Promedio desde fuentes OK</p>
+            </div>
+        `;
+    }).join('');
+
+    let tablaProcesosHtml = '';
+    if (promediosProceso.length > 0) {
+        tablaProcesosHtml = `
+            <details class="mt-3">
+                <summary class="text-xs text-red-700 cursor-pointer">Ver todos los procesos (${promediosProceso.length})</summary>
+                <div class="mt-2 max-h-60 overflow-y-auto border border-gray-200 rounded-lg">
+                    <table class="w-full text-[11px]">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="text-left px-2 py-1">Proceso</th>
+                                <th class="text-right px-2 py-1">Promedio (min)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${promediosProceso.map(p => `
+                                <tr class="border-t border-gray-100">
+                                    <td class="px-2 py-1 truncate" title="${p.proceso}">${p.proceso}</td>
+                                    <td class="px-2 py-1 text-right">${p.minutos.toFixed(1)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        `;
+    }
+
+    section.innerHTML = `
+        <h3 class="text-lg font-bold text-gray-900 mb-1 flex items-center gap-2">
+            📚 Historial de fuentes
+        </h3>
+        <p class="text-xs text-gray-600 mb-4">
+            Basado en la hoja <span class="font-semibold">Historial</span> (Fecha Reporte + Hora Envío).
+        </p>
+
+        <div class="mb-4">
+            <div class="bg-emerald-50 border border-emerald-300 rounded-xl p-3 flex items-center justify-between">
+                <div>
+                    <p class="text-[11px] text-emerald-700 font-semibold uppercase tracking-wide">Todas las fuentes</p>
+                    <p class="text-xs text-gray-600">Hora promedio cuando <span class="font-semibold">todas</span> las fuentes están en OK.</p>
+                </div>
+                <p class="text-2xl font-bold text-emerald-800 font-mono">${horaTodasOk}</p>
+            </div>
+        </div>
+
+        <div class="mb-4">
+            <h4 class="text-sm font-semibold text-gray-900 mb-2">⏱️ Hora promedio por fuente (OK)</h4>
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+                ${fuentesCardsHtml}
+            </div>
+        </div>
+
+        <div>
+            <h4 class="text-sm font-semibold text-gray-900 mb-2">🚀 Procesos vs fuentes OK</h4>
+            <p class="text-[11px] text-gray-500 mb-2">
+                Tiempo promedio que tarda cada proceso en correr después de que todas las fuentes están OK.
+            </p>
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                ${procesosCardsHtml || '<p class="text-xs text-gray-500">Aún no hay suficiente información para calcular estos promedios.</p>'}
+            </div>
+            ${tablaProcesosHtml}
+        </div>
+    `;
+    section.classList.remove('hidden');
+}
+
+// ========== GRÁFICOS ==========
+function renderCharts(filtered) {
+    const errorData = {};
+    const freqData = {};
+    const userData = {};
+    
+    filtered.forEach(function(d) {
+        if (d.proceso) {
+            const reglas = parseInt(d.reglas_ejecutadas || 0);
+            const errores = parseInt(d.reglas_errores || 0);
+            if (!errorData[d.proceso]) errorData[d.proceso] = { reglas: 0, errores: 0 };
+            errorData[d.proceso].reglas += reglas;
+            errorData[d.proceso].errores += errores;
+            
+            freqData[d.proceso] = (freqData[d.proceso] || 0) + 1;
+        }
+        
+        if (d.usuario) {
+            const user = d.usuario.split('@')[0];
+            userData[user] = (userData[user] || 0) + 1;
+        }
+    });
+    
+    const errorProcesses = Object.entries(errorData)
+        .map(function(item) { 
+            return { 
+                proceso: item[0].substring(0, 18), 
+                rate: item[1].reglas > 0 ? (item[1].errores / item[1].reglas * 100).toFixed(2) : 0 
+            }; 
+        })
+        .sort(function(a, b) { return b.rate - a.rate; })
+        .slice(0, 8);
+    
+    const freqProcesses = Object.entries(freqData)
+        .map(function(item) { return { proceso: item[0].substring(0, 18), count: item[1] }; })
+        .sort(function(a, b) { return b.count - a.count; })
+        .slice(0, 8);
+    
+    const topUsers = Object.entries(userData)
+        .map(function(item) { return { user: item[0], total: item[1] }; })
+        .sort(function(a, b) { return b.total - a.total; })
+        .slice(0, 10);
+    
+    Object.keys(charts).forEach(function(key) { charts[key].destroy(); });
+    charts = {};
+    
+    const ctxErrors = document.getElementById('chartErrors').getContext('2d');
+    charts.errors = new Chart(ctxErrors, {
+        type: 'bar',
+        data: {
+            labels: errorProcesses.map(function(d) { return d.proceso; }),
+            datasets: [{
+                label: '% Error',
+                data: errorProcesses.map(function(d) { return d.rate; }),
+                backgroundColor: '#dc2626'
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+    });
+    
+    const ctxFreq = document.getElementById('chartFrequent').getContext('2d');
+    charts.frequent = new Chart(ctxFreq, {
+        type: 'bar',
+        data: {
+            labels: freqProcesses.map(function(d) { return d.proceso; }),
+            datasets: [{
+                label: 'Cantidad',
+                data: freqProcesses.map(function(d) { return d.count; }),
+                backgroundColor: '#dc2626'
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+    });
+    
+    const ctxUsers = document.getElementById('chartUsers').getContext('2d');
+    charts.users = new Chart(ctxUsers, {
+        type: 'bar',
+        data: {
+            labels: topUsers.map(function(d) { return d.user; }),
+            datasets: [{
+                label: 'Procesos',
+                data: topUsers.map(function(d) { return d.total; }),
+                backgroundColor: '#dc2626'
+            }]
+        },
+        options: { 
+            indexAxis: 'y',
+            responsive: true, 
+            maintainAspectRatio: false,
+            scales: { x: { beginAtZero: true } }
+        }
+    });
+}
+
+// ========== TABLA ==========
+function renderTable(filtered) {
+    const tbody = document.getElementById('tableBody');
+    const rows = filtered.slice().reverse().slice(0, 15);
+    
+    tbody.innerHTML = rows.map(function(row) {
+        const usuario = row.usuario ? row.usuario.split('@')[0] : '-';
+        const proceso = row.proceso ? row.proceso.substring(0, 25) : '-';
+        const fecha = row.fecha ? row.fecha.substring(0, 16) : '-';
+        const estado = row.Estado || '-';
+        const tipo = row.tipo_ejecucion || '-';
+        const tiempo = (parseFloat((row.tiempo_ejecucion || '0').replace(',', '.')) / 60).toFixed(2);
+        const errores = row.reglas_errores || '0';
+        const hasErrors = parseInt(errores) > 0;
+        
+        return '<tr class="border-b border-gray-200 hover:bg-red-50">' +
+            '<td class="p-2 text-gray-700">' + usuario + '</td>' +
+            '<td class="p-2 text-gray-700">' + proceso + '</td>' +
+            '<td class="p-2 text-gray-700">' + fecha + '</td>' +
+            '<td class="p-2 text-center">' +
+            '<span class="px-2 py-1 rounded-full text-xs font-semibold ' + 
+            (estado === 'OK' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700') + '">' + 
+            estado + '</span>' +
+            '</td>' +
+            '<td class="p-2 text-center">' +
+            '<span class="px-2 py-1 rounded-full text-xs ' + 
+            (tipo === 'produccion' ? 'bg-red-100 text-red-700' : 'bg-purple-100 text-purple-700') + '">' + 
+            tipo + '</span>' +
+            '</td>' +
+            '<td class="p-2 text-right text-gray-700">' + tiempo + '</td>' +
+            '<td class="p-2 text-right">' +
+            '<span class="' + (hasErrors ? 'text-red-600 font-semibold' : 'text-green-600') + '">' + 
+            errores + '</span>' +
+            '</td>' +
+            '</tr>';
+    }).join('');
+}
+
+// ========== MONITOREO ==========
+function enviarAlerta(nombreProceso) {
+    const correosProceso = getCorreosForProceso(nombreProceso);
+    const destinatarios = [DEFAULT_ALERT_EMAIL].concat(correosProceso);
+    const to = encodeURIComponent(destinatarios.join(','));
+    const subject = encodeURIComponent('Alerta proceso ' + nombreProceso);
+    const body = encodeURIComponent(
+        'Se genera alerta del proceso: ' + nombreProceso + '%0D%0A%0D%0A' +
+        'Por favor revisar el estado en el tablero de control.'
+    );
+    window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+}
+
+function renderMonitored() {
+    if (fechasData.length === 0) {
+        document.getElementById('monitored').classList.add('hidden');
+        return;
+    }
+    
+    const html = '<h3 class="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">' +
+        '📅 Procesos Monitoreados (' + fechasData.length + ')' +
+        '</h3>' +
+        '<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">' +
+        fechasData.map(function(p) {
+            const isAlert = p.ESTADO === 'ALERTA';
+            const nombreProceso = (p.PROCESO || '').toString().trim();
+            return '<div class="p-3 rounded-lg border-2 ' + (isAlert ? 'bg-red-50 border-red-500' : 'bg-green-50 border-green-500') + '">' +
+                '<div class="flex items-start justify-between mb-1">' +
+                '<h4 class="text-gray-900 font-bold text-xs truncate" title="' + nombreProceso + '">' + nombreProceso + '</h4>' +
+                '<span class="text-xs">' + (isAlert ? '⚠️' : '✅') + '</span>' +
+                '</div>' +
+                '<p class="text-xs text-gray-600 mb-2 truncate">' + (p['MAX de periodo_ejecucion_fin'] || 'N/A') + '</p>' +
+                '<div class="flex items-center justify-between mt-1 gap-1">' +
+                    '<span class="px-1 py-0.5 rounded text-[10px] ' + 
+                    (p.TIPO === 'PRODUCCION' ? 'bg-red-100 text-red-700' : 'bg-purple-100 text-purple-700') + '">' +
+                    p.TIPO + '</span>' +
+                    '<button type="button" onclick="enviarAlerta(\'' + nombreProceso.replace(/'/g, "\\'") + '\')" ' +
+                        'class="ml-1 px-2 py-0.5 rounded text-[10px] bg-red-600 text-white hover:bg-red-700">' +
+                        'Enviar alerta' +
+                    '</button>' +
+                '</div>' +
+                '</div>';
+        }).join('') +
+        '</div>';
+    
+    document.getElementById('monitored').innerHTML = html;
+    document.getElementById('monitored').classList.remove('hidden');
+}
+
+// ========== BUSCADOR ==========
+function handleSearch() {
+    searchTerm = document.getElementById('searchInput').value;
+    const searchLower = (searchTerm || '').toLowerCase();
+
+    if (!searchTerm) {
+        document.getElementById('searchResults').innerHTML = '';
+        document.getElementById('processInfo').classList.add('hidden');
+        return;
+    }
+
+    const filtered = getFilteredData();
+    const procesosSet = new Set();
+
+    // Coincidencias por proceso y usuario
+    filtered.forEach(function(d) {
+        if (d.proceso && d.proceso.toLowerCase().includes(searchLower)) {
+            procesosSet.add(d.proceso);
+        }
+        if (d.usuario && d.usuario.toLowerCase().includes(searchLower)) {
+            procesosSet.add(d.proceso);
+        }
+    });
+
+    // Coincidencias por correo (hoja correos)
+    if (correosData && correosData.length > 0) {
+        correosData.forEach(function(r) {
+            const proc = (r.proceso || r.PROCESO || '').toString();
+            if (!proc) return;
+            for (let i = 1; i <= 5; i++) {
+                const val = (r['correos' + i] || r['CORREOS' + i] || r['correo' + i] || r['CORREO' + i] || '').toString().toLowerCase();
+                if (val && val.includes(searchLower)) {
+                    procesosSet.add(proc);
+                }
+            }
+        });
+    }
+
+    const processes = Array.from(procesosSet).filter(Boolean).slice(0, 15);
+
+    if (processes.length === 0) {
+        document.getElementById('searchResults').innerHTML =
+            '<p class="text-gray-500 text-xs">Sin resultados</p>';
+        return;
+    }
+
+    const html = processes.map(function(p) {
+        return '<div class="p-2 cursor-pointer hover:bg-red-50 rounded text-sm text-gray-800" ' +
+            'onclick="showProcessInfo(\'' + p.replace(/'/g, "\\'") + '\')">' +
+            p + '</div>';
+    }).join('');
+
+    document.getElementById('searchResults').innerHTML = html;
+}
+
+function showProcessInfo(proceso) {
+    selectedProcess = proceso;
+    const filtered = data.filter(function(d) { return d.proceso === proceso; });
+
+    if (filtered.length === 0) return;
+
+    const ejecuciones = filtered.length;
+    const errores = filtered.filter(function(d) { return parseInt(d.reglas_errores || 0) > 0; }).length;
+    const promedioTiempo = (
+        filtered.reduce(function(sum, d) { return sum + parseFloat((d.tiempo_ejecucion || '0').replace(',', '.')); }, 0) / ejecuciones / 60
+    ).toFixed(2);
+
+    const tipo = filtered[0].tipo_ejecucion || '-';
+
+    const correos = getCorreosForProceso(proceso);
+    const correosHtml = correos.length
+        ? correos.map(c => '<span class="inline-block text-[11px] bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full mr-1 mb-1">' + c + '</span>').join('')
+        : '<span class="text-[11px] text-gray-400">Sin correos configurados</span>';
+
+    const html = '<h3 class="text-lg font-bold text-gray-900 mb-2 flex items-center gap-2">📄 ' + proceso + '</h3>' +
+        '<p class="text-sm text-gray-600 mb-2">Tipo: <span class="font-semibold">' + tipo.toUpperCase() + '</span></p>' +
+        '<p class="text-sm text-gray-600 mb-2">Ejecuciones: <span class="font-semibold">' + ejecuciones + '</span></p>' +
+        '<p class="text-sm text-gray-600 mb-2">Errores: <span class="font-semibold ' + 
+        (errores > 0 ? 'text-red-600' : 'text-green-600') + '">' + errores + '</span></p>' +
+        '<p class="text-sm text-gray-600 mb-2">Tiempo promedio: <span class="font-semibold">' + promedioTiempo + ' min</span></p>' +
+        '<div class="mb-3">' +
+            '<p class="text-sm font-semibold text-gray-700 mb-1">Correos asociados:</p>' +
+            '<div>' + correosHtml + '</div>' +
+        '</div>' +
+        '<div class="mt-2">' +
+        '<h4 class="font-semibold text-sm mb-1">Últimas ejecuciones:</h4>' +
+        '<ul class="text-xs text-gray-700 max-h-40 overflow-y-auto border rounded-lg p-2 bg-gray-50">' +
+        filtered.slice(-5).reverse().map(function(d) {
+            return '<li class="flex justify-between border-b border-gray-200 py-1">' +
+                '<span>' + (d.fecha || '-') + '</span>' +
+                '<span class="' + (parseInt(d.reglas_errores || 0) > 0 ? 'text-red-600' : 'text-green-600') + '">' +
+                (parseInt(d.reglas_errores || 0) > 0 ? 'Error' : 'OK') +
+                '</span>' +
+                '</li>';
+        }).join('') +
+        '</ul>' +
+        '</div>';
+
+    document.getElementById('processInfo').innerHTML = html;
+    document.getElementById('processInfo').classList.remove('hidden');
+}
+
+function clearSearch() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('searchResults').innerHTML = '';
+    document.getElementById('processInfo').classList.add('hidden');
+    searchTerm = '';
+    renderDashboard();
+}
+</script>
+</body>
+</html>
